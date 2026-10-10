@@ -34,6 +34,7 @@ export interface ChatRequest {
   messages: { role: string; content: string | OpenAiPart[] }[];
   max_tokens: number;
   temperature: number;
+  repetition_penalty?: number;
   response_format?: {
     type: 'json_schema';
     json_schema: { name: string; schema: Record<string, unknown> };
@@ -153,6 +154,7 @@ export async function toChatRequest(
       env.llmMaxTokens,
     ),
     temperature: params.temperature ?? env.llmTemperature,
+    repetition_penalty: env.llmRepetitionPenalty,
     ...(params.output_config?.format?.type === 'json_schema' && schema
       ? {
           response_format: {

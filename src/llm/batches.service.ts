@@ -16,6 +16,7 @@ import {
   toAnthropicMessage,
   toChatRequest,
   type AnthropicParams,
+  type ChatRequest,
   type ChatResponse,
 } from './convert';
 
@@ -128,7 +129,7 @@ export class BatchesService implements OnApplicationBootstrap, OnModuleDestroy {
         data: { batchId: id, customId: r.custom_id },
         opts: {
           jobId: `${id}-${i}`,
-          attempts: 3,
+          attempts: 2,
           backoff: { type: 'exponential', delay: 10_000 },
           removeOnComplete: true,
           removeOnFail: true,
@@ -271,8 +272,26 @@ export class BatchesService implements OnApplicationBootstrap, OnModuleDestroy {
     }
   }
 
-  private async process(job: Job<LlmJob>) {
+  private async complete(request: ChatRequest): Promise<ChatResponse> {
     const env = loadEnv();
+    const res = await fetch(`${env.llmUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(env.llmTimeoutMs),
+    });
+    const text = await res.text();
+    if (res.status >= 400 && res.status < 500) {
+      throw new UnrecoverableError(
+        `vLLM recusou o pedido (HTTP ${res.status}): ${text.slice(0, 300)}`,
+      );
+    }
+    if (!res.ok)
+      throw new Error(`vLLM HTTP ${res.status}: ${text.slice(0, 300)}`);
+    return JSON.parse(text) as ChatResponse;
+  }
+
+  private async process(job: Job<LlmJob>) {
     const { batchId, customId } = job.data;
     const row = await this.redis.client.hgetall(this.k(batchId));
     if (!row.id || row.status === 'ended') return;
@@ -293,21 +312,23 @@ export class BatchesService implements OnApplicationBootstrap, OnModuleDestroy {
     const final = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     try {
       const request = await toChatRequest(JSON.parse(raw) as AnthropicParams);
-      const res = await fetch(`${env.llmUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(request),
-        signal: AbortSignal.timeout(env.llmTimeoutMs),
-      });
-      const text = await res.text();
-      if (res.status >= 400 && res.status < 500) {
+      let res = await this.complete(request);
+      if (res.choices[0]?.finish_reason === 'length') {
+        this.log.warn(
+          `${batchId}/${customId}: passou de ${request.max_tokens} tokens (provável repetição); tentando de novo com penalidade maior`,
+        );
+        res = await this.complete({
+          ...request,
+          repetition_penalty: 1.2,
+          temperature: 0.6,
+        });
+      }
+      if (res.choices[0]?.finish_reason === 'length') {
         throw new UnrecoverableError(
-          `vLLM recusou o pedido (HTTP ${res.status}): ${text.slice(0, 300)}`,
+          `O Gemma entrou em repetição e passou de ${request.max_tokens} tokens duas vezes.`,
         );
       }
-      if (!res.ok)
-        throw new Error(`vLLM HTTP ${res.status}: ${text.slice(0, 300)}`);
-      const message = toAnthropicMessage(JSON.parse(text) as ChatResponse);
+      const message = toAnthropicMessage(res);
       await this.store(batchId, customId, { type: 'succeeded', message });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
