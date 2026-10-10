@@ -9,7 +9,7 @@ WorkingDirectory=/opt/gpu-services/llm
 EnvironmentFile=/etc/gpu-services.env
 Environment=PYTHONUNBUFFERED=1
 Environment=VLLM_NO_USAGE_STATS=1
-ExecStart=/opt/gpu-services/llm/serve.sh
+ExecStart=/bin/bash /opt/gpu-services/llm/serve.sh
 Restart=always
 RestartSec=10
 TimeoutStartSec=900

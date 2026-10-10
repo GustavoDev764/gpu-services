@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -281,14 +280,23 @@ export class JobsService implements OnModuleDestroy {
 
   async cancel(id: string, client: Client) {
     const row = await this.raw(id, client);
-    if (!['queued', 'running'].includes(row.status))
-      throw new ConflictException(`O job já terminou (${row.status}).`);
+    if (!['queued', 'running'].includes(row.status)) return this.purge(id);
     const job = await this.queues[row.type as JobType].getJob(id);
     const active = job ? await job.isActive() : false;
     if (job && !active) await job.remove().catch(() => undefined);
     await this.finish(id, 'canceled', 'Cancelado pelo cliente.');
     if (!active) await rm(jobDir(id), { recursive: true, force: true });
     return { id, status: 'canceled' as const };
+  }
+
+  async purge(id: string) {
+    await rm(jobDir(id), { recursive: true, force: true });
+    await this.redis.client.del(
+      key('job', id),
+      key('job', id, 'result'),
+      key('job', id, 'deliveries'),
+    );
+    return { id, status: 'deleted' as const };
   }
 
   async finish(id: string, status: JobStatus, error?: string) {

@@ -432,10 +432,13 @@ async function main() {
     const again = await call('DELETE', `/jobs/${blocker.data.id}`, {
       key: keyA,
     });
+    const gone = await call('GET', `/jobs/${blocker.data.id}`, { key: keyA });
     check(
-      'não cancela job terminado: 409',
-      again.status === 409,
-      `${again.status}`,
+      'apagar job terminado libera o disco',
+      again.status === 200 &&
+        again.data.status === 'deleted' &&
+        gone.status === 404,
+      `${again.status} · ${gone.status}`,
     );
   } finally {
     rx.server.close();

@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import shutil
 import signal
 import sys
 import time
@@ -72,10 +73,14 @@ class Service:
             mapping["error"] = error[:2000]
         if busy_ms is not None:
             mapping["gpuMs"] = str(busy_ms)
+        shutil.rmtree(self.cfg.job_dir(job_id) / "in", ignore_errors=True)
         pipe = self.redis.pipeline()
         pipe.hset(key, mapping=mapping)
         pipe.expire(key, self.cfg.job_ttl_seconds)
         pipe.expire(self.cfg.key("job", job_id, "result"), self.cfg.job_ttl_seconds)
+        job_type = await self.redis.hget(key, "type")
+        if job_type:
+            pipe.hincrby(self.cfg.key("stats"), f"{job_type}:{status}", 1)
         await pipe.execute()
         if await self.redis.hget(key, "callbackUrl"):
             await self.webhook.add("deliver", {"jobId": job_id, "attempt": 1}, {"removeOnComplete": True, "removeOnFail": True})
