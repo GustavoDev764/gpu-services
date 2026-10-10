@@ -1,0 +1,8 @@
+numpy
+pillow
+opencv-python-headless
+transformers
+safetensors
+huggingface_hub
+bullmq==3.3.3
+redis>=5

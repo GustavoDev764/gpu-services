@@ -1,0 +1,18 @@
+[Unit]
+Description=gpu-services worker (detector + LaMa na GPU)
+After=network-online.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=gpu
+WorkingDirectory=/opt/gpu-services/worker
+EnvironmentFile=/etc/gpu-services.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/gpu-services/worker/.venv/bin/python -m gpu_worker.main
+Restart=always
+RestartSec=5
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

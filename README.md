@@ -1,98 +1,100 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# gpu-services
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API (sem frontend) que roda na GPU os modelos do ManhwaLab:
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+- **detect**: balões e texto com [`ogkalu/comic-text-and-bubble-detector`](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) (RT-DETR). Páginas altas de webtoon são divididas em blocos sobrepostos.
+- **inpaint**: LaMa (`big-lama.pt`) apaga o que a máscara marcar, só dentro de janelas ao redor da máscara.
 
-## Description
+Cada pedido vira um **job** numa fila (BullMQ/Redis). Quando termina, o serviço chama o **webhook** do cliente com assinatura HMAC. O resultado fica disponível por 48 h.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```
+cliente ──POST /jobs/detect|inpaint──▶ API (NestJS) ──fila──▶ worker (Python, GPU)
+   ▲                                       │                      │
+   └──────── webhook assinado ◀────────────┴──── Redis (estado) ◀─┘
 ```
 
-## Compile and run the project
+## Peças
 
-```bash
-# development
-$ npm run start
+| Pasta | O que é |
+|---|---|
+| `src/` | API NestJS: jobs, upload, arquivos, webhook com tentativas, chaves de cliente, configurações, limpeza, saúde |
+| `worker/gpu_worker/` | Worker Python: carrega os dois modelos uma vez na GPU, processa em lotes, decodifica em paralelo com a GPU |
+| `deploy/` | Instalação nativa (systemd + Redis com AOF) |
+| `scripts/check.ts` | Teste de ponta a ponta (`npm run check`) |
 
-# watch mode
-$ npm run start:dev
+Redis é o único banco: filas, jobs (`gpu:job:<id>`), resultados, entregas do webhook, clientes e configurações. Os arquivos ficam em `DATA_DIR/jobs/<id>/`.
 
-# production mode
-$ npm run start:prod
+## API
+
+Toda rota (menos `/health`) exige `Authorization: Bearer <chave>`. A chave de administração (`ADMIN_KEY`) só acessa `/admin/*`; jobs usam chaves de cliente.
+
+| Rota | Descrição |
+|---|---|
+| `POST /jobs/detect` | multipart: `pages` (arquivos), `callbackUrl`, `externalId`, `priority` (`high`/`normal`), `threshold`, `tiles` (`true`/`false`) |
+| `POST /jobs/inpaint` | multipart: `images` e `masks` na mesma ordem (máscara branca ou com alfa = apagar), `callbackUrl`, `externalId`, `priority`, `context` (px de contexto ao redor da máscara) |
+| `GET /jobs/:id` | estado, progresso, tempos e resultado por arquivo |
+| `GET /jobs/:id/files/:nome` | imagem gerada (PNG) |
+| `GET /jobs/:id/files.zip` | todas as imagens geradas |
+| `DELETE /jobs/:id` | cancela |
+| `GET /health` | sem chave: worker (GPU, VRAM, modelos), filas, disco |
+| `GET/PUT /admin/settings` | lotes, concorrência por fila, fp16, limiar, blocos (valem na hora) |
+| `GET/POST/DELETE /admin/clients` | chaves de cliente; a chave e o segredo do webhook aparecem só na criação |
+
+Resultado de detecção por página (mesmo formato do `detect.py` do ManhwaLab):
+
+```json
+{ "name": "001.webp", "status": "done", "width": 800, "height": 12000, "tiles": 6,
+  "detections": [ { "label": "bubble", "score": 0.93, "box": [112, 340, 520, 610] } ] }
 ```
 
-## Run tests
+### Webhook
 
-```bash
-# unit tests
-$ npm run test
+`POST callbackUrl` quando o job termina (`succeeded`, `failed` ou `canceled`):
 
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+```
+x-gpu-event: job.finished
+x-gpu-delivery: d_...
+x-gpu-timestamp: 1791650000
+x-gpu-signature: sha256=hex(HMAC_SHA256(webhookSecret, timestamp + "." + corpo))
 ```
 
-## Deployment
+Sem resposta 2xx em 10 s, tenta de novo em 10 s, 30 s, 2 min, 10 min, 30 min e 2 h. Recuse assinaturas inválidas ou com timestamp de mais de 5 min.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Configuração
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Variável | Padrão | |
+|---|---|---|
+| `ADMIN_KEY` | (obrigatória, 16+ caracteres) | chave de administração |
+| `REDIS_URL` / `REDIS_DB` | `redis://127.0.0.1:6379` / `0` | |
+| `KEY_PREFIX` / `QUEUE_PREFIX` | `gpu` / `bull` | prefixos no Redis |
+| `DATA_DIR` | `./data` | uploads e resultados |
+| `API_HOST` / `API_PORT` | `0.0.0.0` / `8000` | |
+| `PUBLIC_URL` | `http://127.0.0.1:8000` | base dos links nos resultados e no webhook |
+| `JOB_TTL_SECONDS` | `172800` | por quanto tempo o job e os arquivos ficam |
+| `MAX_UPLOAD_MB` / `MAX_FILES` | `40` / `2000` | por arquivo / por job |
+| `DISK_LIMIT_PERCENT` | `80` | acima disso recusa jobs novos (507) |
+| `WEBHOOK_DELAYS_MS` | `10000,30000,120000,600000,1800000,7200000` | |
+| `DEVICE` | `auto` | `cuda`, `cpu` ou `auto` |
+| `LAMA_MODEL` / `DETECTOR_MODEL` | baixa no primeiro uso | caminhos locais dos modelos |
+| `DECODE_THREADS` / `TORCH_THREADS` | `2` / `0` | |
+
+## Instalar no servidor da GPU (Ubuntu 24.04, systemd)
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+sudo ./deploy/install.sh
+curl http://127.0.0.1:8000/health
+sudo grep ADMIN_KEY /etc/gpu-services.env
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Instala Redis (AOF), Node 24, torch com CUDA, baixa os modelos para `models/` e cria os serviços `gpu-api` e `gpu-worker`. Logs: `journalctl -u gpu-worker -f`.
 
-## Resources
+## Desenvolvimento
 
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```bash
+npm install
+python -m venv worker/.venv && worker/.venv/Scripts/pip install torch torchvision -r worker/requirements.txt
+npm run start:dev
+cd worker && .venv/Scripts/python -m gpu_worker.main
+ADMIN_KEY=... npm run check
+python -m gpu_worker.bench <pasta com páginas>
+```
