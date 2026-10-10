@@ -105,10 +105,16 @@ if [ "$LLM_ENABLED" = "true" ]; then
   fi
   chown -R root:gpu llm models
   chmod -R g+rX llm models
+  LLM_SIG=$(cat deploy/gpu-llm.service llm/serve.sh llm/requirements.txt | sha256sum | cut -d' ' -f1)
   install -m 644 deploy/gpu-llm.service /etc/systemd/system/gpu-llm.service
   systemctl daemon-reload
   systemctl enable gpu-llm
-  systemctl restart gpu-llm
+  if [ "$(cat "$STATE_DIR/llm.sig" 2>/dev/null)" != "$LLM_SIG" ] || ! systemctl is-active --quiet gpu-llm; then
+    systemctl restart gpu-llm
+    echo "$LLM_SIG" > "$STATE_DIR/llm.sig"
+  else
+    echo "gpu-llm sem mudanças: mantido no ar"
+  fi
 else
   systemctl disable --now gpu-llm 2>/dev/null || true
 fi
