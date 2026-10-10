@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 import torch
 
-from .gpu import autocast, gpu_lock, run_split
+from .gpu import autocast, gpu_lock, is_oom, run_split
 
 MODEL_URL = "https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt"
 
@@ -98,6 +98,7 @@ class Lama:
         self.path = model_path(configured_path)
         self.device = device
         self.model = torch.jit.load(self.path, map_location=device).eval()
+        self.fp16_broken = False
 
     def _forward(self, patches: Sequence[Patch], fp16: bool) -> list[np.ndarray]:
         h = max(_round8(p.size[0]) for p in patches)
@@ -107,7 +108,13 @@ class Lama:
         image_t = torch.from_numpy(rgb).to(self.device, non_blocking=True).float().div_(255)
         mask_t = (torch.from_numpy(mask).to(self.device, non_blocking=True) > 0).float()
         with gpu_lock, torch.inference_mode():
-            with autocast(self.device, fp16):
+            try:
+                with autocast(self.device, fp16 and not self.fp16_broken):
+                    out = self.model(image_t, mask_t)
+            except RuntimeError as err:
+                if not fp16 or self.fp16_broken or is_oom(err):
+                    raise
+                self.fp16_broken = True
                 out = self.model(image_t, mask_t)
             out = out.float().clamp_(0, 1).mul_(255).round_().to(torch.uint8).permute(0, 2, 3, 1).cpu().numpy()
         return [out[i, : p.size[0], : p.size[1]] for i, p in enumerate(patches)]

@@ -441,7 +441,7 @@ async function main() {
     rx.server.close();
     await call('PUT', '/admin/settings', {
       key: ADMIN,
-      body: { detect_batch: 8, detect_concurrency: 2 },
+      body: { detect_batch: 16, detect_concurrency: 2 },
     });
     await call('DELETE', `/admin/clients/${a.data.id}`, { key: ADMIN });
     await call('DELETE', `/admin/clients/${b.data.id}`, { key: ADMIN });

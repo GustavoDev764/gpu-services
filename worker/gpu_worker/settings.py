@@ -1,5 +1,5 @@
 DEFAULTS: dict[str, float | int | bool] = {
-    "detect_batch": 8,
+    "detect_batch": 16,
     "detect_concurrency": 2,
     "detect_threshold": 0.4,
     "tile_aspect": 1.6,

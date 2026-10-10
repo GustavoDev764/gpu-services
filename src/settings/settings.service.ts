@@ -9,7 +9,7 @@ type Spec = {
 };
 
 export const SETTINGS: Record<string, Spec> = {
-  detect_batch: { default: 8, min: 1, max: 64, integer: true },
+  detect_batch: { default: 16, min: 1, max: 64, integer: true },
   detect_concurrency: { default: 2, min: 1, max: 8, integer: true },
   detect_threshold: { default: 0.4, min: 0.05, max: 0.99 },
   tile_aspect: { default: 1.6, min: 0.5, max: 4 },
