@@ -31,7 +31,11 @@ type Fields = {
   threshold?: string;
   tiles?: string;
   context?: string;
+  wait?: string;
 };
+
+const truthy = (v?: string) =>
+  !!v && ['1', 'true', 'yes'].includes(v.toLowerCase());
 
 const MAX_PER_FIELD = 5000;
 
@@ -104,7 +108,7 @@ export class JobsController {
         body.tiles === undefined || body.tiles === ''
           ? true
           : !['false', '0', 'no'].includes(body.tiles.toLowerCase());
-      return await this.jobs.create({
+      const created = await this.jobs.create({
         type: 'detect',
         client,
         inputs: pages.map((f) => ({ name: f.originalname, path: f.path })),
@@ -113,6 +117,9 @@ export class JobsController {
         priority: body.priority,
         params: { threshold, tiles },
       });
+      return truthy(body.wait)
+        ? await this.jobs.waitFinished(created.id, client)
+        : created;
     } catch (err) {
       await discard(files);
       throw err;
@@ -150,7 +157,7 @@ export class JobsController {
       const context =
         optionalNumber(body.context, 'context', 0, 1000) ??
         (s.lama_context as number);
-      return await this.jobs.create({
+      const created = await this.jobs.create({
         type: 'inpaint',
         client,
         inputs: images.map((f, i) => ({
@@ -163,6 +170,9 @@ export class JobsController {
         priority: body.priority,
         params: { context: Math.round(context) },
       });
+      return truthy(body.wait)
+        ? await this.jobs.waitFinished(created.id, client)
+        : created;
     } catch (err) {
       await discard(files);
       throw err;

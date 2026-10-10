@@ -6,6 +6,7 @@ STATE_DIR=/var/lib/gpu-services
 ENV_FILE=/etc/gpu-services.env
 TORCH_INDEX=${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}
 API_PORT=${API_PORT:-8000}
+OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
 LAMA_URL=https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt
 DETECTOR_ID=ogkalu/comic-text-and-bubble-detector
 SRC=$(cd "$(dirname "$0")/.." && pwd)
@@ -72,6 +73,7 @@ DETECTOR_MODEL=$APP_DIR/models/detector
 HF_HOME=$STATE_DIR/hf
 HF_HUB_OFFLINE=1
 DEVICE=auto
+OPEN_REGISTRATION=$OPEN_REGISTRATION
 DECODE_THREADS=2
 TORCH_THREADS=2
 CONF

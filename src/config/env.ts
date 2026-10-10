@@ -18,6 +18,9 @@ export interface Env {
   webhookTimeoutMs: number;
   publicUrl: string;
   cleanupEveryMs: number;
+  waitMaxMs: number;
+  openRegistration: boolean;
+  maxClients: number;
 }
 
 let cached: Env | null = null;
@@ -66,6 +69,11 @@ export function loadEnv(): Env {
     webhookTimeoutMs: num(e.WEBHOOK_TIMEOUT_MS, 10_000),
     publicUrl: (e.PUBLIC_URL ?? `http://127.0.0.1:${port}`).replace(/\/$/, ''),
     cleanupEveryMs: num(e.CLEANUP_EVERY_MS, 600_000),
+    waitMaxMs: num(e.WAIT_MAX_MS, 120_000),
+    openRegistration: ['1', 'true', 'yes'].includes(
+      (e.OPEN_REGISTRATION ?? '').toLowerCase(),
+    ),
+    maxClients: num(e.MAX_CLIENTS, 20),
   };
   return cached;
 }

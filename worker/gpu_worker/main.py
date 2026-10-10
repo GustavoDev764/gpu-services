@@ -151,7 +151,7 @@ class Service:
         self.webhook = Queue(QUEUES["webhook"], opts)
         s = await self.settings()
         for kind in ("detect", "inpaint"):
-            self.workers[kind] = Worker(QUEUES[kind], self.processor(kind), {**opts, "concurrency": int(s[f"{kind}_concurrency"]), "lockDuration": 120000})
+            self.workers[kind] = Worker(QUEUES[kind], self.processor(kind), {**opts, "concurrency": int(s[f"{kind}_concurrency"]), "lockDuration": 120000, "drainDelay": self.cfg.drain_delay})
             log.info("fila %s ativa: %d jobs simultâneos", QUEUES[kind], int(s[f"{kind}_concurrency"]))
         self.state["ready"] = "1"
         watcher = asyncio.create_task(self.watch_settings())

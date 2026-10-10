@@ -242,6 +242,16 @@ export class JobsService implements OnModuleDestroy {
     };
   }
 
+  async waitFinished(id: string, client: Client) {
+    const until = Date.now() + loadEnv().waitMaxMs;
+    while (Date.now() < until) {
+      const status = await this.redis.client.hget(key('job', id), 'status');
+      if (status && !['queued', 'running'].includes(status)) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return this.detail(id, client);
+  }
+
   async outputFile(id: string, client: Client, name: string) {
     const row = await this.raw(id, client);
     const stored = await this.redis.client.hgetall(

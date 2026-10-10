@@ -31,13 +31,14 @@ Toda rota (menos `/health`) exige `Authorization: Bearer <chave>`. A chave de ad
 | Rota | Descrição |
 |---|---|
 | `POST /jobs/detect` | multipart: `pages` (arquivos), `callbackUrl`, `externalId`, `priority` (`high`/`normal`), `threshold`, `tiles` (`true`/`false`) |
-| `POST /jobs/inpaint` | multipart: `images` e `masks` na mesma ordem (máscara branca ou com alfa = apagar), `callbackUrl`, `externalId`, `priority`, `context` (px de contexto ao redor da máscara) |
+| `POST /jobs/inpaint` | multipart: `images` e `masks` na mesma ordem (máscara branca ou com alfa = apagar), `callbackUrl`, `externalId`, `priority`, `context` (px de contexto ao redor da máscara), `wait=true` (responde só quando terminar) |
 | `GET /jobs/:id` | estado, progresso, tempos e resultado por arquivo |
 | `GET /jobs/:id/files/:nome` | imagem gerada (PNG) |
 | `GET /jobs/:id/files.zip` | todas as imagens geradas |
 | `DELETE /jobs/:id` | cancela |
 | `GET /health` | sem chave: worker (GPU, VRAM, modelos), filas, disco |
 | `GET/PUT /admin/settings` | lotes, concorrência por fila, fp16, limiar, blocos (valem na hora) |
+| `POST /clients/register` | sem chave, só com `OPEN_REGISTRATION=true`: cria um cliente e devolve a chave (usado pelo ManhwaLab para ligar só com a URL) |
 | `GET/POST/DELETE /admin/clients` | chaves de cliente; a chave e o segredo do webhook aparecem só na criação |
 
 Resultado de detecção por página (mesmo formato do `detect.py` do ManhwaLab):
@@ -74,6 +75,9 @@ Sem resposta 2xx em 10 s, tenta de novo em 10 s, 30 s, 2 min, 10 min, 30 min e 2
 | `MAX_UPLOAD_MB` / `MAX_FILES` | `40` / `2000` | por arquivo / por job |
 | `DISK_LIMIT_PERCENT` | `80` | acima disso recusa jobs novos (507) |
 | `WEBHOOK_DELAYS_MS` | `10000,30000,120000,600000,1800000,7200000` | |
+| `OPEN_REGISTRATION` / `MAX_CLIENTS` | `false` / `20` | registro automático de clientes |
+| `WAIT_MAX_MS` | `120000` | quanto `wait=true` segura a resposta |
+| `QUEUE_DRAIN_DELAY` | `0.5` | segundos máximos para o worker notar um job novo |
 | `DEVICE` | `auto` | `cuda`, `cpu` ou `auto` |
 | `LAMA_MODEL` / `DETECTOR_MODEL` | baixa no primeiro uso | caminhos locais dos modelos |
 | `DECODE_THREADS` / `TORCH_THREADS` | `2` / `0` | |

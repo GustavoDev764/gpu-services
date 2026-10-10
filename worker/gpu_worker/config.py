@@ -28,6 +28,7 @@ class Config:
     lama_model: str
     decode_threads: int
     torch_threads: int
+    drain_delay: float
 
     def key(self, *parts: str) -> str:
         return ":".join([self.key_prefix, *parts])
@@ -54,4 +55,5 @@ def load_config() -> Config:
         lama_model=env.get("LAMA_MODEL", ""),
         decode_threads=max(1, int(env.get("DECODE_THREADS", "2"))),
         torch_threads=int(env.get("TORCH_THREADS", "0")),
+        drain_delay=max(0.1, float(env.get("QUEUE_DRAIN_DELAY", "0.5"))),
     )
