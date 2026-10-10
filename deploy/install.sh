@@ -33,7 +33,7 @@ fi
 
 echo "==> API (Node)"
 cd "$APP_DIR"
-npm ci --no-audit --no-fund
+npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 npm run build
 npm prune --omit=dev --no-audit --no-fund
 
