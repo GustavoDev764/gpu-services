@@ -81,7 +81,7 @@ Sem resposta 2xx em 10 s, tenta de novo em 10 s, 30 s, 2 min, 10 min, 30 min e 2
 ## Instalar no servidor da GPU (Ubuntu 24.04, systemd)
 
 ```bash
-sudo ./deploy/install.sh
+sudo API_PORT=3000 PUBLIC_URL=https://seu-endereco-publico ./deploy/install.sh
 curl http://127.0.0.1:8000/health
 sudo grep ADMIN_KEY /etc/gpu-services.env
 ```
