@@ -4,6 +4,8 @@ import { AdminController } from './admin/admin.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { ClientsService } from './auth/clients.service';
 import { RegisterController } from './auth/register.controller';
+import { BatchesController } from './llm/batches.controller';
+import { BatchesService } from './llm/batches.service';
 import { CleanupService } from './cleanup/cleanup.service';
 import { HealthController } from './health/health.controller';
 import { JobsController } from './jobs/jobs.controller';
@@ -18,6 +20,7 @@ import { WebhookService } from './webhook/webhook.service';
     AdminController,
     HealthController,
     RegisterController,
+    BatchesController,
   ],
   providers: [
     RedisService,
@@ -25,6 +28,7 @@ import { WebhookService } from './webhook/webhook.service';
     SettingsService,
     JobsService,
     WebhookService,
+    BatchesService,
     CleanupService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],

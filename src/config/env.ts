@@ -24,6 +24,12 @@ export interface Env {
   llmEnabled: boolean;
   llmUrl: string;
   llmModel: string;
+  llmConcurrency: number;
+  llmMaxTokens: number;
+  llmTemperature: number;
+  llmSliceAspect: number;
+  llmSliceRatio: number;
+  llmTimeoutMs: number;
 }
 
 let cached: Env | null = null;
@@ -85,6 +91,12 @@ export function loadEnv(): Env {
       '',
     ),
     llmModel: e.LLM_MODEL_NAME ?? 'gemma-3-27b-it',
+    llmConcurrency: num(e.LLM_CONCURRENCY, 8),
+    llmMaxTokens: num(e.LLM_MAX_TOKENS, 8192),
+    llmTemperature: num(e.LLM_TEMPERATURE, 0.2),
+    llmSliceAspect: num(e.LLM_SLICE_ASPECT, 1.25),
+    llmSliceRatio: num(e.LLM_SLICE_RATIO, 1.0),
+    llmTimeoutMs: num(e.LLM_TIMEOUT_MS, 600_000),
   };
   return cached;
 }
