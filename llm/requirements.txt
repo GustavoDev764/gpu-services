@@ -1,0 +1,2 @@
+vllm
+huggingface_hub

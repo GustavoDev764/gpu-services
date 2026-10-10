@@ -21,6 +21,9 @@ export interface Env {
   waitMaxMs: number;
   openRegistration: boolean;
   maxClients: number;
+  llmEnabled: boolean;
+  llmUrl: string;
+  llmModel: string;
 }
 
 let cached: Env | null = null;
@@ -74,6 +77,14 @@ export function loadEnv(): Env {
       (e.OPEN_REGISTRATION ?? '').toLowerCase(),
     ),
     maxClients: num(e.MAX_CLIENTS, 20),
+    llmEnabled: ['1', 'true', 'yes'].includes(
+      (e.LLM_ENABLED ?? '').toLowerCase(),
+    ),
+    llmUrl: (e.LLM_URL ?? `http://127.0.0.1:${e.LLM_PORT ?? 8001}`).replace(
+      /\/$/,
+      '',
+    ),
+    llmModel: e.LLM_MODEL_NAME ?? 'gemma-3-27b-it',
   };
   return cached;
 }

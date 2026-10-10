@@ -4,6 +4,7 @@ import { statfs } from 'node:fs/promises';
 import { Public } from '../auth/auth.guard';
 import { loadEnv } from '../config/env';
 import { JobsService } from '../jobs/jobs.service';
+import { llmHealth } from '../llm/llm-health';
 import { key, RedisService } from '../redis/redis.service';
 
 const STALE_MS = 20_000;
@@ -41,8 +42,10 @@ export class HealthController {
     }
     const s = await statfs(loadEnv().dataDir).catch(() => null);
     if (status !== 'ready') res.status(503);
+    const llm = await llmHealth();
     return {
       status,
+      llm,
       worker: fresh
         ? {
             device: worker.device,

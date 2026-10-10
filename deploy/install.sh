@@ -7,6 +7,7 @@ ENV_FILE=/etc/gpu-services.env
 TORCH_INDEX=${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}
 API_PORT=${API_PORT:-8000}
 OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
+LLM_REPO=${LLM_REPO:-RedHatAI/gemma-3-27b-it-FP8-dynamic}
 LAMA_URL=https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt
 DETECTOR_ID=ogkalu/comic-text-and-bubble-detector
 SRC=$(cd "$(dirname "$0")/.." && pwd)
@@ -92,4 +93,24 @@ systemctl daemon-reload
 systemctl enable gpu-api gpu-worker
 systemctl restart gpu-api gpu-worker
 
-echo "==> pronto: curl http://127.0.0.1:8000/health"
+echo "==> LLM (vLLM + Gemma), se LLM_ENABLED=true"
+LLM_ENABLED=$(grep -E '^LLM_ENABLED=' "$ENV_FILE" | cut -d= -f2 || true)
+if [ "$LLM_ENABLED" = "true" ]; then
+  [ -x llm/.venv/bin/python ] || python3 -m venv llm/.venv
+  llm/.venv/bin/pip install -q --upgrade pip
+  llm/.venv/bin/pip install -q -r llm/requirements.txt
+  if [ ! -s models/gemma-3-27b-it/config.json ]; then
+    HF_TOKEN=$(grep -E '^HF_TOKEN=' "$ENV_FILE" | cut -d= -f2 || true)
+    HF_TOKEN="$HF_TOKEN" HF_HOME="$STATE_DIR/hf" llm/.venv/bin/python -c "import os; from huggingface_hub import snapshot_download; snapshot_download('$LLM_REPO', local_dir='models/gemma-3-27b-it', token=os.environ.get('HF_TOKEN') or None)"
+  fi
+  chown -R root:gpu llm models
+  chmod -R g+rX llm models
+  install -m 644 deploy/gpu-llm.service /etc/systemd/system/gpu-llm.service
+  systemctl daemon-reload
+  systemctl enable gpu-llm
+  systemctl restart gpu-llm
+else
+  systemctl disable --now gpu-llm 2>/dev/null || true
+fi
+
+echo "==> pronto: curl http://127.0.0.1:$API_PORT/health"
