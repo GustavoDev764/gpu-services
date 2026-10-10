@@ -92,7 +92,7 @@ export function loadEnv(): Env {
       '',
     ),
     llmModel: e.LLM_MODEL_NAME ?? 'gemma-3-27b-it',
-    llmConcurrency: num(e.LLM_CONCURRENCY, 8),
+    llmConcurrency: num(e.LLM_CONCURRENCY, 12),
     llmMaxTokens: num(e.LLM_MAX_TOKENS, 4096),
     llmTemperature: num(e.LLM_TEMPERATURE, 0.2),
     llmSliceAspect: num(e.LLM_SLICE_ASPECT, 1.25),
