@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 import type { Client } from '../auth/clients.service';
 import { loadEnv } from '../config/env';
 import { bullConnection, key, RedisService } from '../redis/redis.service';
+import { llmHealth } from './llm-health';
 import {
   InvalidRequest,
   toAnthropicMessage,
@@ -22,6 +23,7 @@ import {
 
 export const LLM_QUEUE = 'gpu-llm';
 const MAX_REQUESTS = 1000;
+const GATE_EVERY_MS = 5000;
 
 interface LlmJob {
   batchId: string;
@@ -40,6 +42,7 @@ export class BatchesService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly log = new Logger('llm');
   readonly queue: Queue<LlmJob>;
   private worker?: Worker<LlmJob>;
+  private gate?: NodeJS.Timeout;
 
   constructor(private readonly redis: RedisService) {
     this.queue = new Queue<LlmJob>(LLM_QUEUE, {
@@ -56,11 +59,32 @@ export class BatchesService implements OnApplicationBootstrap, OnModuleDestroy {
       prefix: env.queuePrefix,
       concurrency: env.llmConcurrency,
       lockDuration: env.llmTimeoutMs + 60_000,
+      autorun: false,
     });
     this.worker.on('error', (err) => this.log.error(err.message));
+    this.gate = setInterval(() => void this.followLlm(), GATE_EVERY_MS);
+    this.gate.unref();
+    void this.followLlm();
+  }
+
+  private async followLlm() {
+    const worker = this.worker;
+    if (!worker) return;
+    const ready = (await llmHealth()).status === 'ready';
+    if (ready && !worker.isRunning()) {
+      void worker.run().catch((err: Error) => this.log.error(err.message));
+      this.log.log('vLLM pronto: fila gpu-llm processando');
+    } else if (ready && worker.isPaused()) {
+      void worker.resume();
+      this.log.log('vLLM pronto de novo: fila gpu-llm retomada');
+    } else if (!ready && worker.isRunning() && !worker.isPaused()) {
+      await worker.pause(true);
+      this.log.warn('vLLM fora do ar: fila gpu-llm pausada até ele voltar');
+    }
   }
 
   async onModuleDestroy() {
+    if (this.gate) clearInterval(this.gate);
     await this.worker?.close();
     await this.queue.close();
   }
@@ -122,6 +146,7 @@ export class BatchesService implements OnApplicationBootstrap, OnModuleDestroy {
     multi.rpush(this.k(id, 'order'), ...list.map((r) => r.custom_id));
     for (const part of [undefined, 'req', 'order'])
       multi.expire(this.k(id, part), ttl);
+    multi.set(key('activity'), String(Date.now()));
     await multi.exec();
     await this.queue.addBulk(
       list.map((r, i) => ({

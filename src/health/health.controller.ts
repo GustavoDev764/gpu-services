@@ -1,22 +1,32 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { statfs } from 'node:fs/promises';
+import { uptime } from 'node:os';
 import { Public } from '../auth/auth.guard';
 import { loadEnv } from '../config/env';
 import { JobsService } from '../jobs/jobs.service';
+import { BatchesService } from '../llm/batches.service';
 import { llmHealth } from '../llm/llm-health';
 import { key, RedisService } from '../redis/redis.service';
 
 const STALE_MS = 20_000;
 
-@Controller('health')
+@Controller()
 export class HealthController {
   constructor(
     private readonly redis: RedisService,
     private readonly jobs: JobsService,
+    private readonly batches: BatchesService,
   ) {}
 
-  @Get()
+  @Post('keepalive')
+  async keepalive() {
+    const at = Date.now();
+    await this.redis.client.set(key('activity'), String(at));
+    return { lastJobAt: new Date(at).toISOString() };
+  }
+
+  @Get('health')
   @Public()
   async health(@Res({ passthrough: true }) res: Response) {
     const worker = await this.redis.client.hgetall(key('worker'));
@@ -40,6 +50,18 @@ export class HealthController {
         delayed: c.delayed ?? 0,
       };
     }
+    const llmCounts = await this.batches.queue.getJobCounts(
+      'waiting',
+      'prioritized',
+      'active',
+      'delayed',
+    );
+    queues.llm = {
+      waiting: (llmCounts.waiting ?? 0) + (llmCounts.prioritized ?? 0),
+      active: llmCounts.active ?? 0,
+      delayed: llmCounts.delayed ?? 0,
+    };
+    const lastJob = await this.redis.client.get(key('activity'));
     const s = await statfs(loadEnv().dataDir).catch(() => null);
     if (status !== 'ready') res.status(503);
     const llm = await llmHealth();
@@ -65,6 +87,8 @@ export class HealthController {
           }
         : null,
       queues,
+      lastJobAt: lastJob ? new Date(Number(lastJob)).toISOString() : null,
+      uptimeSeconds: Math.round(uptime()),
       disk: s
         ? {
             usedPercent: Math.round(1000 * (1 - s.bavail / s.blocks)) / 10,

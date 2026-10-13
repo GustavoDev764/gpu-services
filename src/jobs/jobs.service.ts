@@ -153,6 +153,7 @@ export class JobsService implements OnModuleDestroy {
       params: JSON.stringify(input.params),
       webhook: input.callbackUrl ? 'pending' : 'none',
     });
+    await this.redis.client.set(key('activity'), now);
     await this.queues[input.type].add(
       'job',
       { jobId: id },

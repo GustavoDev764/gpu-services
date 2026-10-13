@@ -36,7 +36,8 @@ Toda rota (menos `/health`) exige `Authorization: Bearer <chave>`. A chave de ad
 | `GET /jobs/:id/files/:nome` | imagem gerada (PNG) |
 | `GET /jobs/:id/files.zip` | todas as imagens geradas |
 | `DELETE /jobs/:id` | cancela |
-| `GET /health` | sem chave: worker (GPU, VRAM, modelos), filas, disco |
+| `GET /health` | sem chave: worker (GPU, VRAM, modelos), LLM, filas (`detect`, `inpaint`, `llm`), `lastJobAt` (último job ou lote), `uptimeSeconds` (desde o boot da máquina), disco |
+| `POST /keepalive` | renova o `lastJobAt` sem criar job, para o watchdog não desligar uma GPU que o cliente quer manter ligada |
 | `GET/PUT /admin/settings` | lotes, concorrência por fila, fp16, limiar, blocos (valem na hora) |
 | `POST /clients/register` | sem chave, só com `OPEN_REGISTRATION=true`: cria um cliente e devolve a chave (usado pelo ManhwaLab para ligar só com a URL) |
 | `GET/POST/DELETE /admin/clients` | chaves de cliente; a chave e o segredo do webhook aparecem só na criação |
@@ -81,6 +82,10 @@ Sem resposta 2xx em 10 s, tenta de novo em 10 s, 30 s, 2 min, 10 min, 30 min e 2
 | `DEVICE` | `auto` | `cuda`, `cpu` ou `auto` |
 | `LAMA_MODEL` / `DETECTOR_MODEL` | baixa no primeiro uso | caminhos locais dos modelos |
 | `DECODE_THREADS` / `TORCH_THREADS` | `2` / `0` | |
+| `DOMAIN` | (vazio) | no `install.sh`: instala o Caddy com HTTPS para esse nome, prende a API em `127.0.0.1` e grava `PUBLIC_URL=https://DOMAIN` |
+| `WATCHDOG_ENABLED` | `true` | watchdog da Azure (só age dentro de uma VM da Azure) |
+| `WATCHDOG_IDLE_MINUTES` / `WATCHDOG_MAX_HOURS` | `60` / `12` | desaloca a VM após esse tempo sem jobs, ou ligada há mais que isso |
+| `WATCHDOG_DRY_RUN` | `false` | só escreve no log o que faria |
 
 ## Instalar no servidor da GPU (Ubuntu 24.04, systemd)
 
@@ -91,6 +96,14 @@ sudo grep ADMIN_KEY /etc/gpu-services.env
 ```
 
 Instala Redis (AOF), Node 24, torch com CUDA, baixa os modelos para `models/` e cria os serviços `gpu-api` e `gpu-worker`. Logs: `journalctl -u gpu-worker -f`.
+
+Com `LLM_ENABLED=true` (e `HF_TOKEN`) no `/etc/gpu-services.env`, também instala o vLLM com o Gemma (`gpu-llm`). A fila `gpu-llm` fica pausada enquanto o vLLM não responde e começa sozinha quando ele fica pronto, então lotes enviados durante a subida esperam em vez de falhar.
+
+Com `DOMAIN=gpu.exemplo.com` (por exemplo o nome DNS da Azure, `xxx.eastus2.cloudapp.azure.com`), o Caddy emite o certificado e serve a API em HTTPS. As portas 80 e 443 precisam estar abertas.
+
+### Watchdog na Azure
+
+O timer `gpu-watchdog.timer` roda `deploy/gpu-watchdog.py` a cada 5 minutos. Dentro de uma VM da Azure, ele lê o `/health` local e **desaloca a própria VM** (sem cobrança de GPU) quando as filas estão vazias e não há job há `WATCHDOG_IDLE_MINUTES`, ou quando ela está ligada há mais de `WATCHDOG_MAX_HOURS`. Fora da Azure, não faz nada. Ele usa a identidade gerenciada da VM, que precisa de permissão para `Microsoft.Compute/virtualMachines/deallocate/action` nela mesma. Log: `journalctl -u gpu-watchdog`.
 
 ## Desenvolvimento
 

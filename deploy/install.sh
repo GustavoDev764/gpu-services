@@ -82,6 +82,21 @@ CONF
   chgrp gpu "$ENV_FILE"
   echo "ADMIN_KEY gerada em $ENV_FILE"
 fi
+set_env() {
+  if grep -qE "^$1=" "$ENV_FILE"; then
+    sed -i -E "s|^$1=.*|$1=$2|" "$ENV_FILE"
+  else
+    echo "$1=$2" >> "$ENV_FILE"
+  fi
+}
+API_PORT=$(grep -E '^API_PORT=' "$ENV_FILE" | cut -d= -f2 || true)
+API_PORT=${API_PORT:-8000}
+DOMAIN=${DOMAIN:-$(grep -E '^DOMAIN=' "$ENV_FILE" | cut -d= -f2 || true)}
+if [ -n "$DOMAIN" ]; then
+  set_env DOMAIN "$DOMAIN"
+  set_env API_HOST 127.0.0.1
+  set_env PUBLIC_URL "https://$DOMAIN"
+fi
 chown -R gpu:gpu "$STATE_DIR"
 chown -R root:gpu "$APP_DIR"
 chmod -R g+rX "$APP_DIR"
@@ -89,9 +104,24 @@ chmod -R g+rX "$APP_DIR"
 echo "==> serviços"
 install -m 644 deploy/gpu-api.service /etc/systemd/system/gpu-api.service
 install -m 644 deploy/gpu-worker.service /etc/systemd/system/gpu-worker.service
+install -m 644 deploy/gpu-watchdog.service /etc/systemd/system/gpu-watchdog.service
+install -m 644 deploy/gpu-watchdog.timer /etc/systemd/system/gpu-watchdog.timer
 systemctl daemon-reload
 systemctl enable gpu-api gpu-worker
 systemctl restart gpu-api gpu-worker
+systemctl enable --now gpu-watchdog.timer
+
+if [ -n "$DOMAIN" ]; then
+  echo "==> HTTPS (Caddy) para $DOMAIN"
+  command -v caddy >/dev/null || apt-get install -y -q caddy
+  cat > /etc/caddy/Caddyfile <<CADDY
+$DOMAIN {
+  reverse_proxy 127.0.0.1:$API_PORT
+}
+CADDY
+  systemctl enable caddy
+  systemctl reload caddy 2>/dev/null || systemctl restart caddy
+fi
 
 echo "==> LLM (vLLM + Gemma), se LLM_ENABLED=true"
 LLM_ENABLED=$(grep -E '^LLM_ENABLED=' "$ENV_FILE" | cut -d= -f2 || true)
@@ -119,4 +149,8 @@ else
   systemctl disable --now gpu-llm 2>/dev/null || true
 fi
 
-echo "==> pronto: curl http://127.0.0.1:$API_PORT/health"
+if [ -n "$DOMAIN" ]; then
+  echo "==> pronto: curl https://$DOMAIN/health (portas 80 e 443 precisam estar abertas para o certificado)"
+else
+  echo "==> pronto: curl http://127.0.0.1:$API_PORT/health"
+fi
