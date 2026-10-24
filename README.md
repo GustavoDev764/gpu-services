@@ -39,7 +39,7 @@ Toda rota (menos `/health`) exige `Authorization: Bearer <chave>`. A chave de ad
 | `GET /health` | sem chave: worker (GPU, VRAM, modelos), LLM, filas (`detect`, `inpaint`, `llm`), `lastJobAt` (último job ou lote), `uptimeSeconds` (desde o boot da máquina), disco |
 | `POST /keepalive` | renova o `lastJobAt` sem criar job, para o watchdog não desligar uma GPU que o cliente quer manter ligada |
 | `GET/PUT /admin/settings` | lotes, concorrência por fila, fp16, limiar, blocos (valem na hora) |
-| `POST /clients/register` | sem chave, só com `OPEN_REGISTRATION=true`: cria um cliente e devolve a chave (usado pelo ManhwaLab para ligar só com a URL) |
+| `POST /clients/register` | sem chave de cliente: `{ token }` criptografado com a `GPU_SERVICE_KEY` cria um cliente e devolve `{ id, sealed }` (veja abaixo) |
 | `GET/POST/DELETE /admin/clients` | chaves de cliente; a chave e o segredo do webhook aparecem só na criação |
 
 Resultado de detecção por página (mesmo formato do `detect.py` do ManhwaLab):
@@ -62,6 +62,27 @@ x-gpu-signature: sha256=hex(HMAC_SHA256(webhookSecret, timestamp + "." + corpo))
 
 Sem resposta 2xx em 10 s, tenta de novo em 10 s, 30 s, 2 min, 10 min, 30 min e 2 h. Recuse assinaturas inválidas ou com timestamp de mais de 5 min.
 
+### Cadastro de consumidores (`GPU_SERVICE_KEY`)
+
+A `GPU_SERVICE_KEY` fica só no `.env` do servidor. Todo consumidor precisa da mesma chave para se cadastrar; sem ela não há outro jeito de conseguir uma chave de cliente (fora o `POST /admin/clients` com a `ADMIN_KEY`). A chave serve só para o cadastro: os jobs usam a chave de cliente devolvida, e trocar a `GPU_SERVICE_KEY` não derruba quem já está cadastrado.
+
+O formato está em `src/auth/service-key.ts`, que o consumidor pode copiar:
+
+1. Chaves derivadas com HKDF-SHA256 da `GPU_SERVICE_KEY` (texto UTF-8, sem salt): `info = "gpu-register-v1"` para o pedido e `"gpu-register-reply-v1"` para a resposta, 32 bytes cada.
+2. Pedido `{ "v": 1, "name", "nonce", "iat" }` (nonce: 16 bytes aleatórios em base64url; iat: horário em ms) cifrado com AES-256-GCM, IV de 12 bytes e AAD `gpu-register`.
+3. Token `v1.<iv>.<cifrado>.<tag>`, tudo em base64url, enviado como `POST /clients/register { "token": "..." }`.
+4. Resposta `{ "id", "sealed" }`: `sealed` tem o mesmo formato, cifrado com a chave de resposta e com o `nonce` do pedido como AAD, e contém `{ id, name, apiKey, webhookSecret, createdAt }`.
+
+| Recusa | HTTP |
+|---|---|
+| sem token, ou a chave não confere | 401 |
+| `iat` a mais de 5 min do relógio do servidor | 401 |
+| nonce já usado (guardado no Redis por 10 min) | 409 |
+| 10 tentativas erradas do mesmo IP em 1 min | 429 |
+| `MAX_CLIENTS` atingido | 403 |
+
+Um cadastro com o nome de um cliente que já existe substitui esse cliente (a chave antiga deixa de valer). `npm run check:register` (com `ADMIN_KEY` e `GPU_SERVICE_KEY`) testa tudo isso e confere o vetor fixo que o consumidor também deve conferir.
+
 ## Configuração
 
 | Variável | Padrão | |
@@ -76,7 +97,8 @@ Sem resposta 2xx em 10 s, tenta de novo em 10 s, 30 s, 2 min, 10 min, 30 min e 2
 | `MAX_UPLOAD_MB` / `MAX_FILES` | `40` / `2000` | por arquivo / por job |
 | `DISK_LIMIT_PERCENT` | `80` | acima disso recusa jobs novos (507) |
 | `WEBHOOK_DELAYS_MS` | `10000,30000,120000,600000,1800000,7200000` | |
-| `OPEN_REGISTRATION` / `MAX_CLIENTS` | `false` / `20` | registro automático de clientes |
+| `GPU_SERVICE_KEY` | (obrigatória, `gsk_` + 43 caracteres) | chave que todo consumidor precisa para se cadastrar; o `install.sh` gera |
+| `MAX_CLIENTS` | `20` | |
 | `WAIT_MAX_MS` | `120000` | quanto `wait=true` segura a resposta |
 | `QUEUE_DRAIN_DELAY` | `0.5` | segundos máximos para o worker notar um job novo |
 | `DEVICE` | `auto` | `cuda`, `cpu` ou `auto` |
@@ -93,6 +115,7 @@ Sem resposta 2xx em 10 s, tenta de novo em 10 s, 30 s, 2 min, 10 min, 30 min e 2
 sudo API_PORT=3000 PUBLIC_URL=https://seu-endereco-publico ./deploy/install.sh
 curl http://127.0.0.1:8000/health
 sudo grep ADMIN_KEY /etc/gpu-services.env
+sudo grep GPU_SERVICE_KEY /etc/gpu-services.env
 ```
 
 Instala Redis (AOF), Node 24, torch com CUDA, baixa os modelos para `models/` e cria os serviços `gpu-api` e `gpu-worker`. Logs: `journalctl -u gpu-worker -f`.

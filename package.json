@@ -11,7 +11,8 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,scripts}/**/*.ts\"",
-    "check": "ts-node --transpile-only scripts/check.ts"
+    "check": "ts-node --transpile-only scripts/check.ts",
+    "check:register": "ts-node --transpile-only scripts/check-register.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

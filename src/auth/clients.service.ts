@@ -67,6 +67,10 @@ export class ClientsService {
       .map((r) => ({ id: r.id, name: r.name, createdAt: r.createdAt }));
   }
 
+  async idsByName(name: string) {
+    return (await this.list()).filter((c) => c.name === name).map((c) => c.id);
+  }
+
   async remove(id: string) {
     const hash = await this.redis.client.hget(key('clients'), id);
     if (!hash) throw new NotFoundException('Cliente não encontrado.');

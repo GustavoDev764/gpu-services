@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { SERVICE_KEY_FORMAT } from '../auth/service-key';
 
 export interface Env {
   port: number;
@@ -19,7 +20,7 @@ export interface Env {
   publicUrl: string;
   cleanupEveryMs: number;
   waitMaxMs: number;
-  openRegistration: boolean;
+  serviceKey: string;
   maxClients: number;
   llmEnabled: boolean;
   llmUrl: string;
@@ -56,6 +57,11 @@ export function loadEnv(): Env {
   const adminKey = e.ADMIN_KEY ?? '';
   if (adminKey.length < 16)
     throw new Error('ADMIN_KEY precisa ter ao menos 16 caracteres.');
+  const serviceKey = e.GPU_SERVICE_KEY ?? '';
+  if (!SERVICE_KEY_FORMAT.test(serviceKey))
+    throw new Error(
+      `GPU_SERVICE_KEY ${serviceKey ? 'inválida' : 'não definida'}: use gsk_ seguido de 43 caracteres (gsk_$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=')).`,
+    );
   const port = num(e.API_PORT, 8000);
   cached = {
     port,
@@ -80,9 +86,7 @@ export function loadEnv(): Env {
     publicUrl: (e.PUBLIC_URL ?? `http://127.0.0.1:${port}`).replace(/\/$/, ''),
     cleanupEveryMs: num(e.CLEANUP_EVERY_MS, 600_000),
     waitMaxMs: num(e.WAIT_MAX_MS, 120_000),
-    openRegistration: ['1', 'true', 'yes'].includes(
-      (e.OPEN_REGISTRATION ?? '').toLowerCase(),
-    ),
+    serviceKey,
     maxClients: num(e.MAX_CLIENTS, 20),
     llmEnabled: ['1', 'true', 'yes'].includes(
       (e.LLM_ENABLED ?? '').toLowerCase(),

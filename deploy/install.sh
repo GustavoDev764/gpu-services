@@ -6,7 +6,6 @@ STATE_DIR=/var/lib/gpu-services
 ENV_FILE=/etc/gpu-services.env
 TORCH_INDEX=${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}
 API_PORT=${API_PORT:-8000}
-OPEN_REGISTRATION=${OPEN_REGISTRATION:-false}
 LLM_REPO=${LLM_REPO:-RedHatAI/gemma-3-27b-it-FP8-dynamic}
 LAMA_URL=https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt
 DETECTOR_ID=ogkalu/comic-text-and-bubble-detector
@@ -74,7 +73,6 @@ DETECTOR_MODEL=$APP_DIR/models/detector
 HF_HOME=$STATE_DIR/hf
 HF_HUB_OFFLINE=1
 DEVICE=auto
-OPEN_REGISTRATION=$OPEN_REGISTRATION
 DECODE_THREADS=2
 TORCH_THREADS=2
 CONF
@@ -89,6 +87,11 @@ set_env() {
     echo "$1=$2" >> "$ENV_FILE"
   fi
 }
+sed -i -E '/^OPEN_REGISTRATION=/d' "$ENV_FILE"
+if ! grep -qE '^GPU_SERVICE_KEY=gsk_' "$ENV_FILE"; then
+  set_env GPU_SERVICE_KEY "gsk_$(openssl rand 32 | base64 | tr '+/' '-_' | tr -d '=\n')"
+  echo "GPU_SERVICE_KEY gerada em $ENV_FILE"
+fi
 API_PORT=$(grep -E '^API_PORT=' "$ENV_FILE" | cut -d= -f2 || true)
 API_PORT=${API_PORT:-8000}
 DOMAIN=${DOMAIN:-$(grep -E '^DOMAIN=' "$ENV_FILE" | cut -d= -f2 || true)}
@@ -154,3 +157,4 @@ if [ -n "$DOMAIN" ]; then
 else
   echo "==> pronto: curl http://127.0.0.1:$API_PORT/health"
 fi
+echo "==> chave para os consumidores: sudo grep GPU_SERVICE_KEY $ENV_FILE"
